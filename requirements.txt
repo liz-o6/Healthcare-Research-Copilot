@@ -1,0 +1,13 @@
+langgraph 
+langchain-openai 
+tavily-python
+httpx 
+beautifulsoup4 
+readability-lxml 
+tiktoken 
+rich
+python-dotenv
+langchain-community
+langchain-chroma
+docx2txt
+pypdf
