@@ -1,4 +1,4 @@
-from state import State
+from cores.state import State
 from typing import List, Dict
 from pydantic import BaseModel
 from llm import llm
@@ -6,11 +6,12 @@ from console import console
 from rich.panel import Panel
 import os, asyncio, sys, time
 from dotenv import load_dotenv
-from state import State
 from langgraph.graph import StateGraph, START, END
 
 from nodes.clarification import node_clarify
-from nodes.planner import node_plan, route_retrieval
+from nodes.router import node_router
+from nodes.planner import node_plan
+from nodes.fan_out import route_subqueries
 from nodes.local_db import node_localdb
 from nodes.websearch import node_websearch
 from nodes.document_qa import node_documentqa
@@ -34,26 +35,25 @@ def build_clarification_graph():
 def build_research_graph():
     builder = StateGraph(State)
     builder.add_node("planner", node_plan)
+    builder.add_node("router", node_router)
+
     builder.add_node("local_db", node_localdb)
     builder.add_node("web_search", node_websearch)
     builder.add_node("document_qa", node_documentqa)
+
     builder.add_node("summary", node_summary)
 
     builder.add_edge(START, "planner")
+    builder.add_edge("planner", "router")
+
     builder.add_conditional_edges(
-        "planner",
-        route_retrieval,
-        {
-            "web_search": "web_search",
-            "document_qa": "document_qa",
-            "local_db": "local_db",
-            "END": END,
-        },
+        "router",
+        route_subqueries,
     )
 
+    builder.add_edge("local_db", "summary")
     builder.add_edge("web_search", "summary")
     builder.add_edge("document_qa", "summary")
-    builder.add_edge("local_db", "summary")
 
     builder.add_edge("summary", END)
 
@@ -80,8 +80,6 @@ async def main():
         "To use local document retrieval, please place your files (.txt, .pdf, .docx) in the [bold]documents[/bold] folder before starting.\n\n"
         "[bold]What would you like to research today?[/bold] "
     )
-
-    # user_prompt = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else None
 
     while not user_prompt:
         user_prompt = console.input(

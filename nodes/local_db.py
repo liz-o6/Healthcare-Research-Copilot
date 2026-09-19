@@ -1,4 +1,4 @@
-from state import State
+from cores.state import SubqueryState, State
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List, Dict
 from pydantic import BaseModel
@@ -86,7 +86,10 @@ def save_index(index: dict, index_file: str = "local_documents/index.json"):
         json.dump(index, f, indent=4)
 
 
-async def node_localdb(state: State) -> State:
+async def node_localdb(state: SubqueryState) -> State:
+    if "local_knowledge" not in state["tools"]:
+        return {}
+    query = state["subquery"]
     console.rule("[bold cyan]Local DB")
     docs_path = "local_documents"
     db_path = "local_db"
@@ -95,13 +98,19 @@ async def node_localdb(state: State) -> State:
     if changed_files:
         save_index(index)
     docs = load_documents(changed_files)
-    # print(f"loaded documents {docs}")
     if docs:
         build_vector_db(docs, db_path)
     retriever = load_retriever(db_path)
 
     documents = []
     with console.status("Retrieving local_db..."):
-        documents = await reteriever_tool(retriever, state["local_db_queries"])
+        documents = await reteriever_tool(retriever, query)
 
-    return {"local_db_documents": documents}
+    return {
+        "results": [
+            {
+                "tool": "local_knowledge",
+                "result": {"query": query, "documents": documents},
+            }
+        ]
+    }

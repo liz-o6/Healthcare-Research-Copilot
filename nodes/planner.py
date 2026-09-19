@@ -1,49 +1,33 @@
-from state import State
+from cores.state import State
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List
-from pydantic import BaseModel
 from llm import llm
 from console import console
 from pathlib import Path
-
-
-class WebSearchPlan(BaseModel):
-    search_pubmed: List[str] = []
-    search_arxiv: List[str] = []
-    research_tavily: List[str] = []
-
-
-class queryresponse(BaseModel):
-    web_search: bool
-    document_qa: bool
-    local_knowledge: bool
-    web_search_plan: WebSearchPlan
-    document_queries: List[str]
-    local_db_queries: List[str]
+from cores.state import State
+from cores.schemas import ResearchPlan
 
 
 async def node_plan(state: State) -> State:
     """
-    Plan the retrieval strategy for the current user request.
+    Plan the research strategy for the current user request.
 
-    This node determines which information sources should be used:
-    - Web Search: Retrieve up-to-date information from the Internet
-      (e.g., Tavily, PubMed, arXiv).
+    This node is responsible for understanding the user's research goal and decomposing it into clear, focused, and non-overlapping subqueries.
+    It should identify the information needed to answer the question comprehensively, while leaving retrieval tool selection to the downstream Router node.
 
-    - Document QA: Answer questions using documents uploaded during
-      the current session. These documents are temporary and only
-      available for this conversation.
+    The available information sources are:
 
-    - Local Knowledge: Retrieve information from the user's persistent
-      local vector database, which has been built in advance and can
-      be reused across conversations.
+    * **Web Search:** Retrieve up-to-date information from the Internet, including general web content, PubMed, and arXiv.
+    * **Document QA:** Retrieve relevant information from documents uploaded during the current session.
+        These documents are temporary and available only within this conversation.
+    * **Local Knowledge:** Retrieve relevant information from the user's persistent local vector database, which can be reused across conversations.
 
-    More than one source may be selected when appropriate. For example,
-    the agent may combine Web Search with Local Knowledge to produce
-    a more comprehensive answer.
+    The Planner should produce a structured research plan containing the overall research goal and a list of focused subqueries.
+    Each subquery should be self-contained, directly relevant to the user's request, and address a specific aspect of the research task.
 
     Returns:
-        Updated state containing the selected retrieval strategy.
+    Updated state containing the structured research plan, including the research goal and subqueries.
+
     """
 
     # Get clarifications
@@ -61,14 +45,19 @@ async def node_plan(state: State) -> State:
 
     Messages = [
         SystemMessage(
-            content=f"""You are responsible for planning the retrieval strategy for a research assistant.
+            content=f"""You are the Planner of a healthcare research assistant.
 
-            Based on the user's request and the available resources, decide which retrieval sources should be used.
+            Your task is to analyze the user's request, understand the research goal, and decompose it into clear, focused subqueries. You must NOT decide which retrieval tool to use. Tool selection will be handled by a separate Router node downstream.
 
-            Available sources:
-            - Web Search: Retrieve up-to-date information from the Internet.
-            - Document QA: Search documents uploaded during the current session.
-            - Local Knowledge: Search the user's persistent local vector database.
+            Available resources:
+            - document_qa:
+            Use this when the user's question requires information from uploaded documents.
+
+            - local_knowledge:
+            Use this when the question requires information from the local knowledge base.
+
+            - web/PubMed/arXiv:
+            Use these for external information.
 
             Current uploaded documents:
             {document_files}
@@ -76,86 +65,46 @@ async def node_plan(state: State) -> State:
             Current local knowledge documents:
             {local_db_files}
 
-            Rules:
-            - Select one or more retrieval sources when appropriate.
-            - Use Web Search for recent information, external knowledge, or literature search.
-            - First choose the most appropriate search tool:
-                - search_pubmed: biomedical and medical literature.
-                - search_arxiv: AI, computer science, and quantitative research papers.
-                - research_tavily: general web search, news, official websites, and non-academic information.
-                    - For PubMed and ArXiv queries:
-                        - Keep queries broad enough to retrieve relevant results; avoid combining too many concepts with AND.
-                        - Use only 2–4 core concepts per query.
-                        - Do not require multiple publication types (e.g., "systematic review" AND "meta-analysis") in the same query.
-                        - Do not combine multiple years with AND (e.g., "2022 AND 2023 AND 2024").
-                        - For recent literature, prefer a date range such as "2022:2024[dp]" instead of separate years.
-                        - Generate several simpler queries rather than one overly restrictive query.
-            - If multiple search tools are beneficial, select more than one.
-            - For each selected search tool, generate 3–8 focused and specific search queries.
-            - Use Document QA only if one or more uploaded documents are likely to contain information relevant to the user's request based on their filenames.
-            - If Document QA is selected, use the retriever_tool.
-                - Generate 3–8 focused and specific retrieval queries for retriever_tool.
-                - The retrieval queries should capture different aspects or phrasings of the user's request to maximize document recall.
-                - Store these queries as a list under document_queries.
-            - Use Local Knowledge only if one or more documents in the persistent local knowledge base are likely to contain relevant information based on their filenames.
-            - If Local Knowledge is selected, use the local_retriever_tool.
-                - Generate 3–8 focused and specific retrieval queries for local_retriever_tool.
-                - The retrieval queries should capture different aspects or phrasings of the user's request to maximize retrieval recall.
-                - Store these queries as a list under local_db_queries.
-            - Prefer combining multiple sources when it will improve the final answer.
-            - Do not select unnecessary sources or tools.
-            - If the uploaded documents or local knowledge are clearly relevant, prefer using them instead of relying solely on Web Search.
+            Planning rules:
+            1. Understand the user's original question and clarification.
+            2. Decompose the research task into clear, focused, and non-overlapping subqueries.
+            3. Each subquery should address one specific aspect of the research question.
+            4. Generate multiple subqueries when the question requires different perspectives or sources.
+            5. Keep each subquery self-contained and sufficiently specific to be independently researched.
+            6. Preserve important medical, scientific, technical, and temporal constraints from the user's request.
+            7. Do not generate search queries for specific tools.
+            8. Do not select Web Search, PubMed, arXiv, Document QA, or Local Knowledge.
+            9. Do not answer the user's question.
+            10. Do not include tool names, tool-selection decisions, or retrieval instructions in the output.
 
-            Return the result as structured data with:
-            - use_web: true/false
-            - web_search_plan: a dictionary where each key is a search tool name and value is a list of search queries. The total values for all tools is 3–8 queries.
-            - use_document: true/false
-            - use_local: true/false
-            - document_queries: a list of 3–8 retrieval queries for retriever_tool (empty if use_document is false)
+            Return ONLY structured data matching the following schema:
 
-            Do not answer the user's question. Only generate the retrieval plan."""
+            {{
+                "research_goal": "A concise description of the user's overall research goal.",
+                "subqueries": [
+                    "A focused and self-contained research subquery.",
+                    "Another focused research subquery."
+                ]
+            }}
+
+            The subqueries list must contain at least one item.
+            Each subquery must be directly relevant to the original question.
+            Do not include any additional fields or explanatory text."""
         ),
-        HumanMessage(content=f"""Original question: {state["user_prompt"]}. 
-                    Clarification: {clar}"""),
+        HumanMessage(content=f"""Original question: {state["user_prompt"]}
+
+            Clarification: {clar}"""),
     ]
 
-    structured_llm = llm.with_structured_output(queryresponse)
+    structured_llm = llm.with_structured_output(ResearchPlan)
 
     console.rule("[bold cyan]Plan")
 
     with console.status("Drafting sub-queries..."):
         msg = await structured_llm.ainvoke(Messages)
 
-    retrieval_plan = []
-    if msg.web_search:
-        retrieval_plan.append("web")
-
-        web_search_plan = {}
-        remaining = 8
-
-        plan = msg.web_search_plan
-
-        for tool in ["search_pubmed", "search_arxiv", "research_tavily"]:
-            if remaining <= 0:
-                break
-
-            queries = getattr(plan, tool)
-            if not queries:
-                continue
-            selected = queries[:remaining]
-            if selected:
-                web_search_plan[tool] = selected
-                remaining -= len(selected)
-
-    if msg.document_qa:
-        retrieval_plan.append("document")
-    if msg.local_knowledge:
-        retrieval_plan.append("local")
-
     return {
-        "retrieval_plan": retrieval_plan,
-        "document_queries": msg.document_queries,
-        "web_search_plan": web_search_plan,
+        "research_plan": msg,
     }
 
 
@@ -169,5 +118,4 @@ def route_retrieval(state: State) -> List[str] | str:
     if "local" in state["retrieval_plan"]:
         routes.append("local_db")
 
-    print(f"plannerroutes: {routes}")
     return routes if routes else "END"

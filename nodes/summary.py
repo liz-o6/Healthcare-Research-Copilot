@@ -15,41 +15,13 @@ import httpx
 from bs4 import BeautifulSoup
 from readability import Document
 
-from state import State
+from cores.state import State
 from llm import llm
 
 
 async def node_summary(state: State) -> State:
-    sources = []
-
     console.rule("[bold cyan]Summarize results")
-
-    if state["pages"]:
-        for i, p in enumerate(state["pages"], start=1):
-            title = p.get("title") or p.get("url")
-            sources.append(f"[{i}] {title} - {p.get('url')}")
-    sources_text = "\n".join(sources)
-
-    corpus = []
-    if state["pages"]:
-        for i, p in enumerate(state["pages"], start=1):
-            txt = (p.get("text") or "")[:6000]
-            corpus.append(
-                f"### Source {i}\nURL: {p.get('url')}\nTitle: {p.get('title')}\nTexe:{txt}\n"
-            )
-    corpus_text = "\n".join(corpus)
-
-    docs = []
-    if state["documents"]:
-        for i, doc in enumerate(state["documents"], start=1):
-            docs.append(f"### Document {i}\n{doc}\n")
-    documents_text = "\n".join(docs)
-
-    local_docs = []
-    if state["local_db_documents"]:
-        for i, doc in enumerate(state["local_db_documents"], start=1):
-            local_docs.append(f"### Document {i}\n{doc}\n")
-    local_documents_text = "\n".join(local_docs)
+    results = state["results"]
 
     prompt = f"""Write a concise, well-structured research report in Markdown format：
     \"\"\"{state['user_prompt']}\"\"\".
@@ -64,6 +36,9 @@ async def node_summary(state: State) -> State:
     - Sources
 
     Rules:
+    - Generate the final report based ONLY on the retrieved results
+        and clearly distinguish uploaded documents, local knowledge,
+        and web sources.
     - Cite like [1], [2] inlike after claims you derive from sources.
     - Synthesize; do not just copy text.
     - Prefer recent and authoritative sources.
@@ -71,21 +46,10 @@ async def node_summary(state: State) -> State:
     - Use information from both the retrieved web sources and the retrieved documents when available.
     - Clearly distinguish between information supported by web sources, local documents, and uploaded documents when necessary.
     - If the uploaded documents, local documents, and web sources disagree, explicitly describe the disagreement instead of choosing one without explanation.
+    
+    Results:
+    {results}
 
-    Web Sources List:
-    {sources_text}
-
-    Uploaded Documents:
-    {documents_text}
-
-    Web Search Corpus:
-    {corpus_text}
-
-    Uploaded Documents:
-    {documents_text}
-
-    Local Documents:
-    {local_documents_text}
     """
     # STREAM THE FINAL REPORT
     report_chunks: List[str] = []
@@ -104,4 +68,4 @@ async def node_summary(state: State) -> State:
 
     console.print(f"Report saved to {fname}")
 
-    return state
+    return {}

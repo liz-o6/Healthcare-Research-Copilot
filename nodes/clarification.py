@@ -1,10 +1,11 @@
-from state import State
+from cores.state import State
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List
 from pydantic import BaseModel
 from llm import llm
 from console import console
 from rich.panel import Panel
+from cores.schemas import ClarifyResponse
 
 
 async def node_clarify(state: State) -> State:
@@ -22,10 +23,6 @@ async def node_clarify(state: State) -> State:
     """
 
     user_prompt = state["user_prompt"]
-
-    class ClarifyResponse(BaseModel):
-        needs: bool
-        questions: List[str]
 
     messages = [
         SystemMessage(f"""Your are a research assistant. 

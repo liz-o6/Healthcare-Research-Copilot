@@ -126,7 +126,12 @@ async def search_pubmed(query: str, k: int = 5) -> list:
         "retmode": "json",
     }
 
-    response = requests.get(search_url, params=search_params)
+    response = requests.get(search_url, params=search_params, timeout=30)
+
+    if not response.ok:
+        print(f"PubMed API error: {response.status_code}")
+        return []
+
     data = response.json()
 
     # print("data:", data)

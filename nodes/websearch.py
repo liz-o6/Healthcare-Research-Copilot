@@ -4,7 +4,7 @@ from tools.web_search_tools import (
     research_tavily,
 )
 
-from state import State
+from cores.state import SubqueryState
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List, Dict, Any
 from llm import llm
@@ -65,20 +65,23 @@ async def fetch_page(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
         }
 
 
-async def node_websearch(state: State) -> State:
+async def node_websearch(state: SubqueryState) -> SubqueryState:
     console.rule("[bold cyan]Web Search")
+    tool_names = [tool for tool in state["tools"]]
+    if not tool_names:
+        return {}
     tool_map = {
         "search_pubmed": search_pubmed,
         "search_arxiv": search_arxiv,
         "research_tavily": research_tavily,
     }
     hits = []
-    with console.status("Searching the web..."):
-        for tool_name, queries in state["web_search_plan"].items():
+    query = state["subquery"]
+    with console.status(f"Searching the web for {query}..."):
+        for tool_name in tool_names:
             tool = tool_map[tool_name]
-            for query in queries:
-                hit = await tool.ainvoke(query)
-                hits.extend(hit)
+            hit = await tool.ainvoke(query)
+            hits.extend(hit)
 
     hits = dedupe_hits(hits, limit=25)
 
@@ -118,4 +121,15 @@ async def node_websearch(state: State) -> State:
 
     console.print(f"Fetched {len(pages)} pages")
 
-    return {"hits": hits, "pages": pages}
+    return {
+        "results": [
+            {
+                "tool": "websearch",
+                "result": {
+                    "query": query,
+                    "hits": hits,
+                    "pages": pages,
+                },
+            }
+        ]
+    }
