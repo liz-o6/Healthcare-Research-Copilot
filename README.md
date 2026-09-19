@@ -38,18 +38,30 @@ Clarification
     v
 Planner
     |
-    +----------------+----------------+----------------+
-    |                |                |
-    v                v                v
-Web Search       Document QA       Local DB
-    |                |                |
-    +----------------+----------------+----------------+
-                     |
-                     v
-                  Summary
-                     |
-                     v
-             Research Report
+    v
+Router
+    |
+    +-------------------+-------------------+
+    |                   |                   |
+    v                   v                   v
+Subquery 1          Subquery 2          Subquery 3
+    |                   |                   |
+    +--------+----------+----------+--------+
+             |          |          |
+             v          v          v
+          Web Search  PubMed    Local DB
+             \          |          /
+              \         |         /
+               +--------+--------+
+                        |
+                        v
+                  Fan-in / Aggregate
+                        |
+                        v
+                     Summary
+                        |
+                        v
+                Research Report
 ```
 
 ## Project Structure
