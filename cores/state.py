@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Dict, Any, Annotated, Literal
 from .schemas import ResearchPlan, RouterOutput
+from .error_codes import ErrorInfo
 import operator
 
 ToolName = Literal[
@@ -31,20 +32,7 @@ class State(TypedDict):
 
     results: Annotated[List[ToolResult], operator.add]
 
-    # format_result: str
-    # # web search
-    # hits: List[Dict[str, Any]]  # {url, title, snippet, score}
-    # pages: List[Dict[str, Any]]  # {url, title, text}
-    # report_markdown: str
-
-    # # document qa
-    # document_uploaded: bool = False  # if any documents is uploaded
-    # document_queries: List[str]
-    # documents: List[str]
-
-    # # local db
-    # local_db_queries: List[str]
-    # local_db_documents: List[str]
+    errors: list[ErrorInfo]
 
 
 class SubqueryState(TypedDict):
