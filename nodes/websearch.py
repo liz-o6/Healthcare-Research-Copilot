@@ -5,6 +5,7 @@ from tools.web_search_tools import (
 )
 
 from cores.state import SubqueryState
+from cores.error_codes import ToolError, StateErrorCode, StateError
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List, Dict, Any
 from llm import llm
@@ -76,12 +77,31 @@ async def node_websearch(state: SubqueryState) -> SubqueryState:
         "research_tavily": research_tavily,
     }
     hits = []
+    errors = []
     query = state["subquery"]
     with console.status(f"Searching the web for {query}..."):
         for tool_name in tool_names:
             tool = tool_map[tool_name]
-            hit = await tool.ainvoke(query)
-            hits.extend(hit)
+            result = await tool.ainvoke(query)
+            if isinstance(result, ToolError):
+                if tool_name == "search_pubmed":
+                    error_code = StateErrorCode.PUBMED_ERROR
+                elif tool_name == "search_arxiv":
+                    error_code = StateErrorCode.ARXIV_ERROR
+                elif tool_name == "research_tavily":
+                    error_code = StateErrorCode.TAVILY_ERROR
+                errors.append(
+                    StateError(
+                        code=error_code,
+                        toolcode=result.code,
+                        message=str(result.message),
+                        node="document_qa",
+                        tool=result.tool,
+                        retryable=result.retryable,
+                    )
+                )
+            else:
+                hits.extend(result)
 
     hits = dedupe_hits(hits, limit=25)
 
@@ -131,5 +151,6 @@ async def node_websearch(state: SubqueryState) -> SubqueryState:
                     "pages": pages,
                 },
             }
-        ]
+        ],
+        "errors": errors,
     }
