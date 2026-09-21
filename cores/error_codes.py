@@ -1,35 +1,79 @@
 from enum import Enum
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
+
+NodeName = Literal[
+    "planner",
+    "router",
+    "local_knowledge",
+    "document_qa",
+    "websearch",
+]
+
+ToolName = Literal["build_vector_db", "load_retriever", "reteriever_tool"]
 
 
-class ErrorCode(str, Enum):
+class StateErrorCode(str, Enum):
     # Planner
-    PLANNER_LLM_ERROR = "E1001"
-    PLANNER_INVALID_OUTPUT = "E1002"
+    PLANNER_LLM_ERROR = "ES1001"
+    PLANNER_INVALID_OUTPUT = "ES1002"
 
     # Router
-    ROUTER_LLM_ERROR = "E2001"
-    ROUTER_INVALID_OUTPUT = "E2002"
+    ROUTER_LLM_ERROR = "ES2001"
+    ROUTER_INVALID_OUTPUT = "ES2002"
 
     # Search tools
-    TAVILY_ERROR = "E3001"
-    PUBMED_ERROR = "E3002"
-    ARXIV_ERROR = "E3003"
+    TAVILY_ERROR = "ES3001"
+    PUBMED_ERROR = "ES3002"
+    ARXIV_ERROR = "ES3003"
 
     # Local DB / RAG
     VECTOR_DB_ERROR = "E4001"
-    EMBEDDING_ERROR = "E4002"
-    DOCUMENT_LOAD_ERROR = "E4003"
+    RETRIEVER_ERROR = "ES4001"
+    EMBEDDING_ERROR = "ES4002"
+    DOCUMENT_LOAD_ERROR = "ES4003"
 
     # Answer / Summary
-    SUMMARY_LLM_ERROR = "E5001"
-    SUMMARY_INVALID_OUTPUT = "E5002"
+    SUMMARY_LLM_ERROR = "ES5001"
+    SUMMARY_INVALID_OUTPUT = "ES5002"
 
 
-class ErrorInfo(BaseModel):
-    code: ErrorCode
+class ToolErrorCode(str, Enum):
+    VECTOR_DB_SETUP_ERROR = "ET1001"
+    RETRIEVER_LOAD_ERROR = "ET1002"
+
+    # Arxiv
+    ARXIV_TIMEOUT_ERROR = "ET2001"
+    ARXIV_NETWORK_ERROR = "ET2002"
+    ARXIV_PARSE_ERROR = "ET2003"
+    ARXIV_RESULT_PARSE_ERROR = "ET2004"
+
+    # PubMed
+    PUBMED_INVALID_INPUT = "ET3001"
+    PUBMED_TIMEOUT = "ET3002"
+    PUBMED_NETWORK_ERROR = "ET3003"
+    PUBMED_JSON_PARSE_ERROR = "ET3004"
+    PUBMED_XML_PARSE_ERROR = "ET3005"
+    PUBMED_RESULT_PARSE_ERROR = "ET3006"
+
+    # Tavily
+    TAVILY_INVALID_INPUT = "ET4001"
+    TAVILY_API_ERROR = "ET4002"
+    TAVILY_INVALID_RESPONSE = "ET4003"
+    TAVILY_RESULT_PARSE_ERROR = "ET4004"
+
+
+class StateError(BaseModel):
+    code: StateErrorCode
+    toolcode: Optional[ToolErrorCode]
     message: str
-    node: str
-    tool: Optional[str] = None
+    node: NodeName
+    tool: Optional[ToolName] = None
+    retryable: bool = False
+
+
+class ToolError(BaseModel):
+    code: ToolErrorCode
+    message: str
+    tool: ToolName
     retryable: bool = False

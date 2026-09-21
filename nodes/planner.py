@@ -6,6 +6,7 @@ from console import console
 from pathlib import Path
 from cores.state import State
 from cores.schemas import ResearchPlan
+from cores.error_codes import StateError, StateErrorCode
 
 
 async def node_plan(state: State) -> State:
@@ -101,11 +102,27 @@ async def node_plan(state: State) -> State:
     console.rule("[bold cyan]Plan")
 
     with console.status("Drafting sub-queries..."):
-        msg = await structured_llm.ainvoke(Messages)
+        try:
+            msg = await structured_llm.ainvoke(Messages)
 
-    return {
-        "research_plan": msg,
-    }
+            return {
+                "research_plan": msg,
+            }
+
+        except Exception as e:
+            error = StateError(
+                code=StateErrorCode.PLANNER_LLM_ERROR,
+                message=str(e),
+                node="planner",
+                retryable=True,
+            )
+
+            return {
+                "research_plan": {
+                    "subqueries": [state["user_prompt"]],
+                },
+                "errors": [error],
+            }
 
 
 def route_retrieval(state: State) -> List[str] | str:

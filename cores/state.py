@@ -1,17 +1,25 @@
 from typing import TypedDict, List, Dict, Any, Annotated, Literal
 from .schemas import ResearchPlan, RouterOutput
-from .error_codes import ErrorInfo
+from .error_codes import StateError
 import operator
 
-ToolName = Literal[
+ToolNodeName = Literal[
     "local_knowledge",
     "document_qa",
     "websearch",
 ]
 
+ToolName = Literal[
+    "research_tavily",
+    "search_pubmed",
+    "search_arxiv",
+    "document_qa",
+    "local_knowledge",
+]
+
 
 class ToolResult(TypedDict):
-    tool: ToolName
+    tool: ToolNodeName
     result: object
 
 
@@ -32,7 +40,7 @@ class State(TypedDict):
 
     results: Annotated[List[ToolResult], operator.add]
 
-    errors: list[ErrorInfo]
+    errors: Annotated[List[StateError], operator.add]
 
 
 class SubqueryState(TypedDict):

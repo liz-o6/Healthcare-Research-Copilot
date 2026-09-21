@@ -16,6 +16,7 @@ from tools.retriever_toos import load_documents
 import json
 import hashlib
 from pathlib import Path
+from cores.error_codes import StateError, StateErrorCode, ToolError
 
 
 def file_sha256(file_path: Path) -> str:
@@ -99,12 +100,39 @@ async def node_localdb(state: SubqueryState) -> State:
         save_index(index)
     docs = load_documents(changed_files)
     if docs:
-        build_vector_db(docs, db_path)
-    retriever = load_retriever(db_path)
+        error = build_vector_db(docs, db_path)
+        if error is not None:
+            state_error = StateError(
+                code=StateErrorCode.VECTOR_DB_ERROR,
+                toolcode=error.code,
+                message=str(error.message),
+                node="local_knowledge",
+                tool=error.tool,
+                retryable=error.retryable,
+            )
+            return {
+                "errors": [state_error],
+            }
 
+    result = load_retriever(db_path)
+
+    if isinstance(result, ToolError):
+        state_error = StateError(
+            code=StateErrorCode.RETRIEVER_ERROR,
+            toolcode=error.code,
+            message=str(error.message),
+            node="local_knowledge",
+            tool=error.tool,
+            retryable=error.retryable,
+        )
+        return {
+            "errors": [state_error],
+        }
+
+    retriever = result
     documents = []
     with console.status("Retrieving local_db..."):
-        documents = await reteriever_tool(retriever, query)
+        documents = await reteriever_tool(retriever, [query])
 
     return {
         "results": [

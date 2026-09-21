@@ -6,6 +6,7 @@ from console import console
 from pathlib import Path
 from typing import Literal
 from cores.schemas import RouteDecision, RouterOutput
+from cores.error_codes import StateError, StateErrorCode
 
 
 async def node_router(state: State) -> State:
@@ -73,8 +74,21 @@ async def node_router(state: State) -> State:
     console.rule("[bold cyan]Router")
 
     with console.status("Router selecting retrieval tools..."):
-        msg = await structured_llm.ainvoke(Messages)
+        try:
+            msg = await structured_llm.ainvoke(Messages)
 
-    return {
-        "router": msg,
-    }
+            return {
+                "router": msg,
+            }
+
+        except Exception as e:
+            error = StateError(
+                code=StateErrorCode.ROUTER_LLM_ERROR,
+                message=str(e),
+                node="planner",
+                retryable=True,
+            )
+
+            return {
+                "errors": [error],
+            }
