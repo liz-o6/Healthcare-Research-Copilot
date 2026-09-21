@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
+from cores.error_codes import ToolError, ToolErrorCode
 
 
 def load_documents(paths: list[Path]) -> List[Document]:
@@ -80,9 +81,16 @@ def build_vector_db(
         vector_db.add_documents(all_pages)
         print(f"Added documents to ChromaDB vector store for path {persist_directory}!")
 
+        return None
+
     except Exception as e:
         print(f"Error setting up ChromaDB: {str(e)}")
-        raise
+        return ToolError(
+            code=ToolErrorCode.VECTOR_DB_SETUP_ERROR,
+            message=str(e),
+            tool="build_vector_db",
+            retryable=False,
+        )
 
 
 def load_retriever(persist_directory):
@@ -100,7 +108,12 @@ def load_retriever(persist_directory):
 
     except Exception as e:
         print(f"Error setting up ChromaDB: {str(e)}")
-        raise
+        return ToolError(
+            code=ToolErrorCode.RETRIEVER_LOAD_ERROR,
+            message=str(e),
+            tool="load_retriever",
+            retryable=False,
+        )
 
     retriever = vector_db.as_retriever(
         search_type="similarity",
