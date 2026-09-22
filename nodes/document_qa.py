@@ -25,6 +25,7 @@ async def node_documentqa(state: SubqueryState) -> SubqueryState:
             message=str(error.message),
             node="document_qa",
             tool=error.tool,
+            subquery=query,
             retryable=error.retryable,
         )
         return {
@@ -39,6 +40,7 @@ async def node_documentqa(state: SubqueryState) -> SubqueryState:
             message=str(error.message),
             node="document_qa",
             tool=error.tool,
+            subquery=query,
             retryable=error.retryable,
         )
         return {

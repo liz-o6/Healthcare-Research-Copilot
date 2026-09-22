@@ -40,7 +40,11 @@ class State(TypedDict):
 
     results: Annotated[List[ToolResult], operator.add]
 
+    # errors
     errors: Annotated[List[StateError], operator.add]
+    retry_counts: Dict[str, int]
+    retry_targets: List[str]
+    processed_error_count: int
 
 
 class SubqueryState(TypedDict):

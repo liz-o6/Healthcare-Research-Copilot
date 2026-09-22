@@ -10,7 +10,14 @@ NodeName = Literal[
     "websearch",
 ]
 
-ToolName = Literal["build_vector_db", "load_retriever", "reteriever_tool"]
+ToolName = Literal[
+    "build_vector_db",
+    "load_retriever",
+    "reteriever_tool",
+    "search_arxiv",
+    "search_pubmed",
+    "research_tavily",
+]
 
 
 class StateErrorCode(str, Enum):
@@ -65,11 +72,12 @@ class ToolErrorCode(str, Enum):
 
 class StateError(BaseModel):
     code: StateErrorCode
-    toolcode: Optional[ToolErrorCode]
     message: str
     node: NodeName
-    tool: Optional[ToolName] = None
     retryable: bool = False
+    toolcode: Optional[ToolErrorCode]
+    tool: Optional[ToolName] = None
+    subquery: Optional[str] = None
 
 
 class ToolError(BaseModel):

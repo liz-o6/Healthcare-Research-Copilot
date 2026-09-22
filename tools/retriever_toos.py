@@ -89,7 +89,7 @@ def build_vector_db(
             code=ToolErrorCode.VECTOR_DB_SETUP_ERROR,
             message=str(e),
             tool="build_vector_db",
-            retryable=False,
+            retryable=True,
         )
 
 
@@ -112,7 +112,7 @@ def load_retriever(persist_directory):
             code=ToolErrorCode.RETRIEVER_LOAD_ERROR,
             message=str(e),
             tool="load_retriever",
-            retryable=False,
+            retryable=True,
         )
 
     retriever = vector_db.as_retriever(

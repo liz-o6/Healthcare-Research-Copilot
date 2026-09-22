@@ -16,7 +16,7 @@ from nodes.local_db import node_localdb
 from nodes.websearch import node_websearch
 from nodes.document_qa import node_documentqa
 from nodes.summary import node_summary
-
+from nodes.aggregate import node_aggregate, route_after_aggregate
 from pathlib import Path
 import shutil
 
@@ -41,6 +41,7 @@ def build_research_graph():
     builder.add_node("web_search", node_websearch)
     builder.add_node("document_qa", node_documentqa)
 
+    builder.add_node("aggregate", node_aggregate)
     builder.add_node("summary", node_summary)
 
     builder.add_edge(START, "planner")
@@ -49,11 +50,27 @@ def build_research_graph():
     builder.add_conditional_edges(
         "router",
         route_subqueries,
+        {
+            "local_db": "local_db",
+            "web_search": "web_search",
+            "document_qa": "document_qa",
+        },
     )
 
-    builder.add_edge("local_db", "summary")
-    builder.add_edge("web_search", "summary")
-    builder.add_edge("document_qa", "summary")
+    builder.add_edge("local_db", "aggregate")
+    builder.add_edge("web_search", "aggregate")
+    builder.add_edge("document_qa", "aggregate")
+
+    builder.add_conditional_edges(
+        "aggregate",
+        route_after_aggregate,
+        {
+            "document_qa": "document_qa",
+            "local_knowledge": "local_db",
+            "web_search": "web_search",
+            "summary": "summary",
+        },
+    )
 
     builder.add_edge("summary", END)
 
@@ -109,6 +126,16 @@ async def main():
 
     clarification_graph = build_clarification_graph()
     research_graph = build_research_graph()
+
+    # debug
+    # from IPython.display import Image, display
+
+    # png_bytes = research_graph.get_graph().draw_mermaid_png()
+
+    # with open("research_graph.png", "wb") as f:
+    #     f.write(png_bytes)
+
+    # print("Graph saved to research_graph.png")
 
     state: State = await clarification_graph.ainvoke(
         {

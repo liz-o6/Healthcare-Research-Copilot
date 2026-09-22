@@ -2,118 +2,124 @@ from tools.web_search_tools import (
     search_pubmed,
     search_arxiv,
     research_tavily,
+    dedupe_hits,
+    fetch_page,
 )
 
-from cores.state import SubqueryState
+from cores.state import State, SubqueryState
 from cores.error_codes import ToolError, StateErrorCode, StateError
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from typing import List, Dict, Any
 from llm import llm
 from console import console
-
-from rich.table import Table
-import re
 import httpx
-from bs4 import BeautifulSoup
-from readability import Document
+from rich.table import Table
 import asyncio
 
 
-def dedupe_hits(hits: List[Dict[str, Any]], limit=25) -> List[Dict[str, Any]]:
-    seen = set()
-    deduped = []
-
-    for h in hits:
-        key = re.sub(r"#.*$", "", (h.get("url") or "").strip())
-        if key and key not in seen:
-            seen.add(key)
-            deduped.append(h)
-
-        if len(deduped) >= limit:
-            break
-
-    return deduped
-
-
-async def fetch_page(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
-    """
-    return {
-        "url": "",
-        "title": "",
-        "text": ""
-    }
-    """
-    try:
-        r = await client.get(url, follow_redirects=True)
-        html = r.text
-        doc = Document(html)
-        title = doc.short_title()
-        cleaned = doc.summary(html_partial=True)
-        soup = BeautifulSoup(cleaned, "html.parser")
-        text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
-
-        return {
-            "url": str(r.url),
-            "title": title,
-            "text": text[:120000],
-        }
-
-    except Exception as e:
-        return {
-            "url": url,
-            "title": "",
-            "text": f"Error fetching page: {e}",
-        }
-
-
-async def node_websearch(state: SubqueryState) -> SubqueryState:
+async def node_websearch(state: State | SubqueryState):
     console.rule("[bold cyan]Web Search")
-    tool_names = [tool for tool in state["tools"]]
-    if not tool_names:
-        return {}
+
     tool_map = {
         "search_pubmed": search_pubmed,
         "search_arxiv": search_arxiv,
         "research_tavily": research_tavily,
     }
+
     hits = []
     errors = []
+
     query = state["subquery"]
+
+    # Determine which tools to run
+    retry_targets = state.get("retry_targets", [])
+
+    web_retry_targets = [
+        target for target in retry_targets if target["node"] == "websearch"
+    ]
+
+    if web_retry_targets:
+        # Retry: only run failed web tools
+        tool_queries = [
+            (target["tool"], target["subquery"]) for target in web_retry_targets
+        ]
+
+        console.rule("[bold yellow]Retry Web Search")
+
+    else:
+        # First run: run all tools assigned to this subquery
+        tool_names = [tool for tool in state["tools"]]
+
+        if not tool_names:
+            return {}
+
+        tool_queries = [(tool_name, query) for tool_name in tool_names]
+
+        console.rule("[bold cyan]Web Search")
+
+    # Search
     with console.status(f"Searching the web for {query}..."):
-        for tool_name in tool_names:
-            tool = tool_map[tool_name]
-            result = await tool.ainvoke(query)
+        for tool_name, tool_query in tool_queries:
+
+            tool = tool_map.get(tool_name)
+
+            if tool is None:
+                continue
+
+            if web_retry_targets:
+                console.print(
+                    f"[yellow]↻ Retrying {tool_name}[/yellow]: " f"{tool_query}"
+                )
+
+            result = await tool.ainvoke(tool_query)
+
             if isinstance(result, ToolError):
+
                 if tool_name == "search_pubmed":
                     error_code = StateErrorCode.PUBMED_ERROR
+
                 elif tool_name == "search_arxiv":
                     error_code = StateErrorCode.ARXIV_ERROR
+
                 elif tool_name == "research_tavily":
                     error_code = StateErrorCode.TAVILY_ERROR
+
                 errors.append(
                     StateError(
                         code=error_code,
                         toolcode=result.code,
                         message=str(result.message),
-                        node="document_qa",
+                        node="websearch",
                         tool=result.tool,
+                        subquery=tool_query,
                         retryable=result.retryable,
                     )
                 )
+
             else:
                 hits.extend(result)
 
+    # Dedupe
     hits = dedupe_hits(hits, limit=25)
 
-    tbl = Table(title=f"Top {len(hits)} results (deduped)", show_header=True)
+    tbl = Table(
+        title=f"Top {len(hits)} results (deduped)",
+        show_header=True,
+    )
     tbl.add_column("#", width=3)
     tbl.add_column("Title", overflow="fold")
     tbl.add_column("URL", overflow="fold")
+
     for i, h in enumerate(hits, 1):
-        tbl.add_row(str(i), h.get("title") or "", h.get("url") or "")
+        tbl.add_row(
+            str(i),
+            h.get("title") or "",
+            h.get("url") or "",
+        )
 
     console.print(tbl)
 
+    # Fetch
     console.rule("[bold cyan]Fetch")
 
     urls = [h["url"] for h in hits if h.get("url")][:12]
@@ -134,6 +140,7 @@ async def node_websearch(state: SubqueryState) -> SubqueryState:
 
     for p in pages:
         label = p.get("title") or p.get("url")
+
         if p.get("text", "").startswith("Error"):
             console.print(f"[red]✗[/red] {label}")
         else:
@@ -141,6 +148,7 @@ async def node_websearch(state: SubqueryState) -> SubqueryState:
 
     console.print(f"Fetched {len(pages)} pages")
 
+    # Return
     return {
         "results": [
             {

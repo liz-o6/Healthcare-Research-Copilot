@@ -108,6 +108,7 @@ async def node_localdb(state: SubqueryState) -> State:
                 message=str(error.message),
                 node="local_knowledge",
                 tool=error.tool,
+                subquery=query,
                 retryable=error.retryable,
             )
             return {
@@ -123,6 +124,7 @@ async def node_localdb(state: SubqueryState) -> State:
             message=str(error.message),
             node="local_knowledge",
             tool=error.tool,
+            subquery=query,
             retryable=error.retryable,
         )
         return {

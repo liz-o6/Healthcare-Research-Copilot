@@ -6,9 +6,60 @@ from dotenv import load_dotenv
 import os
 from typing import List, Dict, Any
 from cores.error_codes import ToolError, ToolErrorCode
+from bs4 import BeautifulSoup
+from readability import Document
+import re
+import httpx
 
 load_dotenv()
 tavily = TavilyClient(api_key=str(os.getenv("TAVILY_API_KEY")))
+
+
+def dedupe_hits(hits: List[Dict[str, Any]], limit=25) -> List[Dict[str, Any]]:
+    seen = set()
+    deduped = []
+
+    for h in hits:
+        key = re.sub(r"#.*$", "", (h.get("url") or "").strip())
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(h)
+
+        if len(deduped) >= limit:
+            break
+
+    return deduped
+
+
+async def fetch_page(client: httpx.AsyncClient, url: str) -> Dict[str, Any]:
+    """
+    return {
+        "url": "",
+        "title": "",
+        "text": ""
+    }
+    """
+    try:
+        r = await client.get(url, follow_redirects=True)
+        html = r.text
+        doc = Document(html)
+        title = doc.short_title()
+        cleaned = doc.summary(html_partial=True)
+        soup = BeautifulSoup(cleaned, "html.parser")
+        text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+
+        return {
+            "url": str(r.url),
+            "title": title,
+            "text": text[:120000],
+        }
+
+    except Exception as e:
+        return {
+            "url": url,
+            "title": "",
+            "text": f"Error fetching page: {e}",
+        }
 
 
 @tool
@@ -60,12 +111,26 @@ async def search_arxiv(query: str, k: int = 5) -> list:
             retryable=True,
         )
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.ConnectionError as e:
         return ToolError(
             code=ToolErrorCode.ARXIV_NETWORK_ERROR,
             message=str(e),
             tool="search_arxiv",
             retryable=True,
+        )
+
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response else None
+
+        retryable = status_code == 429 or (
+            status_code is not None and status_code >= 500
+        )
+
+        return ToolError(
+            code=ToolErrorCode.ARXIV_NETWORK_ERROR,
+            message=f"HTTP {status_code}: {e}",
+            tool="search_arxiv",
+            retryable=retryable,
         )
 
     # 3. XML parsing
@@ -210,10 +275,32 @@ async def search_pubmed(query: str, k: int = 5) -> list | ToolError:
 
     except requests.exceptions.Timeout as e:
         return ToolError(
-            code=ToolErrorCode.PUBMED_TIMEOUT,
+            code=ToolErrorCode.PUBMED_TIMEOUT_ERROR,
             message=str(e),
             tool="search_pubmed",
             retryable=True,
+        )
+
+    except requests.exceptions.ConnectionError as e:
+        return ToolError(
+            code=ToolErrorCode.PUBMED_NETWORK_ERROR,
+            message=str(e),
+            tool="search_pubmed",
+            retryable=True,
+        )
+
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response else None
+
+        retryable = status_code == 429 or (
+            status_code is not None and status_code >= 500
+        )
+
+        return ToolError(
+            code=ToolErrorCode.PUBMED_NETWORK_ERROR,
+            message=f"HTTP {status_code}: {e}",
+            tool="search_pubmed",
+            retryable=retryable,
         )
 
     except requests.exceptions.RequestException as e:
@@ -221,7 +308,7 @@ async def search_pubmed(query: str, k: int = 5) -> list | ToolError:
             code=ToolErrorCode.PUBMED_NETWORK_ERROR,
             message=str(e),
             tool="search_pubmed",
-            retryable=True,
+            retryable=False,
         )
 
     # 3. Parse JSON response
@@ -267,7 +354,7 @@ async def search_pubmed(query: str, k: int = 5) -> list | ToolError:
             retryable=True,
         )
 
-    except requests.exceptions.RequestException as e:
+    except requests.exceptions.ConnectionError as e:
         return ToolError(
             code=ToolErrorCode.PUBMED_NETWORK_ERROR,
             message=str(e),
@@ -275,6 +362,27 @@ async def search_pubmed(query: str, k: int = 5) -> list | ToolError:
             retryable=True,
         )
 
+    except requests.exceptions.HTTPError as e:
+        status_code = e.response.status_code if e.response else None
+
+        retryable = status_code == 429 or (
+            status_code is not None and status_code >= 500
+        )
+
+        return ToolError(
+            code=ToolErrorCode.PUBMED_NETWORK_ERROR,
+            message=f"HTTP {status_code}: {e}",
+            tool="search_pubmed",
+            retryable=retryable,
+        )
+
+    except requests.exceptions.RequestException as e:
+        return ToolError(
+            code=ToolErrorCode.PUBMED_NETWORK_ERROR,
+            message=str(e),
+            tool="search_pubmed",
+            retryable=False,
+        )
     # 5. Parse XML response
     try:
         root = ET.fromstring(response.text)
@@ -389,13 +497,10 @@ async def research_tavily(query: str, k: int = 5) -> list | ToolError:
         )
 
     except Exception as e:
-        # Tavily SDK may raise different exception types
-        # depending on the underlying API/network failure.
-        error_message = str(e)
+        error_message = str(e).lower()
 
-        # Basic classification for retry behavior
         retryable = any(
-            keyword in error_message.lower()
+            keyword in error_message
             for keyword in [
                 "timeout",
                 "timed out",
@@ -411,7 +516,7 @@ async def research_tavily(query: str, k: int = 5) -> list | ToolError:
 
         return ToolError(
             code=ToolErrorCode.TAVILY_API_ERROR,
-            message=error_message,
+            message=str(e),
             tool="research_tavily",
             retryable=retryable,
         )
