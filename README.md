@@ -54,11 +54,9 @@ Subquery 1          Subquery 2          Subquery 3
               \         |         /
                +--------+--------+
                         |
-                        v
-                  Fan-in / Aggregate
                         |
                         v
-                     Summary
+                 Fan-in / Summary
                         |
                         v
                 Research Report

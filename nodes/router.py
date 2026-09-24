@@ -5,7 +5,7 @@ from llm import llm
 from console import console
 from pathlib import Path
 from typing import Literal
-from cores.schemas import RouteDecision, RouterOutput
+from cores.schemas import ResearchPlan, RouteDecision, RouterOutput
 from cores.error_codes import StateError, StateErrorCode
 
 
@@ -22,11 +22,19 @@ async def node_router(state: State) -> State:
 
     # Uploaded documents
     documents_dir = Path("documents")
-    document_files = [f.name for f in documents_dir.iterdir() if f.is_file()]
+    document_files = (
+        [f.name for f in documents_dir.iterdir() if f.is_file()]
+        if documents_dir.exists()
+        else []
+    )
 
     # Local vector database source documents
     local_db_dir = Path("local_documents")
-    local_db_files = [f.name for f in local_db_dir.iterdir() if f.is_file()]
+    local_db_files = (
+        [f.name for f in local_db_dir.iterdir() if f.is_file()]
+        if local_db_dir.exists()
+        else []
+    )
     Messages = [
         SystemMessage(content=f"""You are the Router of a healthcare research assistant.
 
@@ -85,10 +93,27 @@ async def node_router(state: State) -> State:
             error = StateError(
                 code=StateErrorCode.ROUTER_LLM_ERROR,
                 message=str(e),
-                node="planner",
+                node="router",
                 retryable=True,
             )
 
+            research_plan = state["research_plan"]
+            subqueries = (
+                research_plan.subqueries
+                if isinstance(research_plan, ResearchPlan)
+                else research_plan["subqueries"]
+            )
+            fallback_router = RouterOutput(
+                decisions=[
+                    RouteDecision(
+                        subquery=subquery,
+                        tools=["research_tavily"],
+                    )
+                    for subquery in subqueries
+                ]
+            )
+
             return {
+                "router": fallback_router,
                 "errors": [error],
             }

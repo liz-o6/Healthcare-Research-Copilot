@@ -133,6 +133,14 @@ async def search_arxiv(query: str, k: int = 5) -> list:
             retryable=retryable,
         )
 
+    except requests.exceptions.RequestException as e:
+        return ToolError(
+            code=ToolErrorCode.ARXIV_NETWORK_ERROR,
+            message=str(e),
+            tool="search_arxiv",
+            retryable=True,
+        )
+
     # 3. XML parsing
     try:
         root = ET.fromstring(response.text)
@@ -275,7 +283,7 @@ async def search_pubmed(query: str, k: int = 5) -> list | ToolError:
 
     except requests.exceptions.Timeout as e:
         return ToolError(
-            code=ToolErrorCode.PUBMED_TIMEOUT_ERROR,
+            code=ToolErrorCode.PUBMED_TIMEOUT,
             message=str(e),
             tool="search_pubmed",
             retryable=True,

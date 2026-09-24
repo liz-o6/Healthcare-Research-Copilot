@@ -16,7 +16,6 @@ from nodes.local_db import node_localdb
 from nodes.websearch import node_websearch
 from nodes.document_qa import node_documentqa
 from nodes.summary import node_summary
-from nodes.aggregate import node_aggregate, route_after_aggregate
 from pathlib import Path
 import shutil
 
@@ -41,7 +40,6 @@ def build_research_graph():
     builder.add_node("web_search", node_websearch)
     builder.add_node("document_qa", node_documentqa)
 
-    builder.add_node("aggregate", node_aggregate)
     builder.add_node("summary", node_summary)
 
     builder.add_edge(START, "planner")
