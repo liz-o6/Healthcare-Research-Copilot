@@ -1,71 +1,131 @@
-import os, re, asyncio, sys, time
-from typing import TypedDict, List, Dict, Any
+import json
+from typing import Any, Dict, List
 
-# this is for styling the console output
 from console import console
 from rich.markdown import Markdown
 
-# core packages required by the agent
-from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
-
-# search agent for LLM
-from tavily import TavilyClient
-import httpx
-from bs4 import BeautifulSoup
-from readability import Document
-
+from cores.schemas import Source, SummaryOutput
 from cores.state import State
 from llm import llm
+
+
+def build_source_registry(results: List[Dict[str, Any]]) -> List[Source]:
+    sources: List[Source] = []
+    seen = set()
+
+    def add_source(title: str, content: str, url: str | None = None):
+        content = content.strip()
+        if not content:
+            return
+
+        key = url or content
+        if key in seen:
+            return
+
+        seen.add(key)
+        sources.append(
+            Source(
+                source_id=f"S{len(sources) + 1}",
+                title=title or "Untitled source",
+                content=content[:12000],
+                url=url,
+            )
+        )
+
+    for tool_result in results:
+        tool_name = tool_result.get("tool")
+        payload = tool_result.get("result")
+
+        if not isinstance(payload, dict):
+            continue
+
+        if tool_name == "web_search":
+            hits = payload.get("hits") or []
+            pages = payload.get("pages") or []
+
+            for index, hit in enumerate(hits[:12]):
+                if not isinstance(hit, dict):
+                    continue
+
+                page = pages[index] if index < len(pages) else {}
+                page = page if isinstance(page, dict) else {}
+                page_text = page.get("text") or ""
+
+                if page_text.startswith("Error fetching page"):
+                    page_text = ""
+
+                add_source(
+                    title=page.get("title") or hit.get("title") or "Web source",
+                    content=page_text or hit.get("content") or "",
+                    url=page.get("url") or hit.get("url"),
+                )
+
+        elif tool_name in {"document_qa", "local_knowledge"}:
+            documents = payload.get("documents") or []
+            source_label = (
+                "Uploaded document" if tool_name == "document_qa" else "Local knowledge"
+            )
+
+            for index, document in enumerate(documents):
+                if isinstance(document, dict):
+                    content = document.get("content") or ""
+                    metadata = document.get("metadata") or {}
+                    title = metadata.get("source") or f"{source_label} {index + 1}"
+                else:
+                    content = str(document)
+                    title = f"{source_label} {index + 1}"
+
+                add_source(title=title, content=content)
+
+    return sources
 
 
 async def node_summary(state: State) -> State:
     console.rule("[bold cyan]Summarize results")
     results = state.get("results") or []
+    source_registry = build_source_registry(results)
+    sources_json = json.dumps(
+        [source.model_dump() for source in source_registry],
+        ensure_ascii=False,
+        indent=2,
+    )
 
-    prompt = f"""Write a concise, well-structured research report in Markdown format：
-    \"\"\"{state['user_prompt']}\"\"\".
+    prompt = f"""You are writing the final report for a healthcare research assistant.
+
+    Research question:
+    \"\"\"{state['user_prompt']}\"\"\"
 
     Use sections:
     - Executive Summary (5-8 bullet points)
     - Key Findings
-    - Confilcting View / Risks
+    - Conflicting Views / Risks
     - Data & Numbers
     - Open Questions
     - Next Actions
     - Sources
 
     Rules:
-    - Generate the final report based ONLY on the retrieved results
-        and clearly distinguish uploaded documents, local knowledge,
-        and web sources.
-    - Cite like [1], [2] inlike after claims you derive from sources.
+    - Base the report ONLY on the sources provided below.
+    - Cite factual claims inline using the exact source IDs, such as [S1] or [S1][S2].
+    - Never invent a source ID or cite a source that does not support the claim.
+    - Clearly distinguish web sources, uploaded documents, and local knowledge.
     - Synthesize; do not just copy text.
     - Prefer recent and authoritative sources.
-    - If sources conflict, say no.
-    - Use information from both the retrieved web sources and the retrieved documents when available.
-    - Clearly distinguish between information supported by web sources, local documents, and uploaded documents when necessary.
-    - If the uploaded documents, local documents, and web sources disagree, explicitly describe the disagreement instead of choosing one without explanation.
-    
-    Results:
-    {results}
+    - If sources conflict, explain the disagreement explicitly.
+    - In the Sources section, list only cited source IDs with their titles and URLs when available.
+    - If no usable sources are provided, state that there is insufficient evidence and do not invent citations.
+
+    Source registry:
+    {sources_json}
 
     """
-    # STREAM THE FINAL REPORT
-    report_chunks: List[str] = []
+    structured_llm = llm.with_structured_output(SummaryOutput)
+    summary = await structured_llm.ainvoke(prompt)
 
-    async for chunk in llm.astream(prompt):
-        piece = chunk.content or ""
-        report_chunks.append(piece)
+    console.print(Markdown(summary.report_markdown))
+    console.rule("[bold green]Draft report complete")
 
-    report = "".join(report_chunks)
-    console.print(Markdown(report))
-    console.rule("[bold green]Report complete")
-
-    fname = "research_report.md"
-    with open(fname, "w", encoding="utf-8") as f:
-        f.write(report)
-
-    console.print(f"Report saved to {fname}")
-
-    return {}
+    return {
+        "source_registry": source_registry,
+        "report_markdown": summary.report_markdown,
+    }

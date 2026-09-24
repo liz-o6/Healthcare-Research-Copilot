@@ -16,6 +16,8 @@ from nodes.local_db import node_localdb
 from nodes.websearch import node_websearch
 from nodes.document_qa import node_documentqa
 from nodes.summary import node_summary
+from nodes.final_report import node_final_report
+from nodes.citation_verification import node_citation_verification
 from pathlib import Path
 import shutil
 
@@ -41,6 +43,8 @@ def build_research_graph():
     builder.add_node("document_qa", node_documentqa)
 
     builder.add_node("summary", node_summary)
+    builder.add_node("citation_verification", node_citation_verification)
+    builder.add_node("final_report", node_final_report)
 
     builder.add_edge(START, "planner")
     builder.add_edge("planner", "router")
@@ -59,7 +63,10 @@ def build_research_graph():
     builder.add_edge("web_search", "summary")
     builder.add_edge("document_qa", "summary")
 
-    builder.add_edge("summary", END)
+    builder.add_edge("summary", "citation_verification")
+    builder.add_edge("citation_verification", "final_report")
+
+    builder.add_edge("final_report", END)
 
     research_graph = builder.compile()
     return research_graph

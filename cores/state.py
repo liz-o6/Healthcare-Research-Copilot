@@ -1,5 +1,5 @@
 from typing import TypedDict, List, Dict, Any, Annotated, Literal
-from .schemas import ResearchPlan, RouterOutput
+from .schemas import ResearchPlan, RouterOutput, Source, CitationCheck
 from .error_codes import StateError
 import operator
 
@@ -39,6 +39,11 @@ class State(TypedDict):
     router: RouterOutput
 
     results: Annotated[List[ToolResult], operator.add]
+
+    # summary
+    report_markdown: str
+    source_registry: List[Source]
+    citation_checks: List[CitationCheck]
 
     # errors
     errors: Annotated[List[StateError], operator.add]

@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Dict, Any, Literal
+from typing import TypedDict, List, Dict, Any, Literal, Optional
 from pydantic import BaseModel
 from pydantic.fields import Field
 
@@ -36,3 +36,34 @@ class ResearchPlan(BaseModel):
 # router
 class RouterOutput(BaseModel):
     decisions: List[RouteDecision]
+
+
+# summary
+class Source(BaseModel):
+    source_id: str
+    title: str
+    content: str
+    url: Optional[str] = None
+
+
+class SummaryOutput(BaseModel):
+    report_markdown: str = Field(
+        description="The complete research report in Markdown with inline citations."
+    )
+
+
+class CitationCheck(BaseModel):
+    claim: str
+    source_id: str
+    status: Literal["supported", "unsupported", "invalid"]
+    reason: str
+
+
+class CitationVerificationOutput(BaseModel):
+    citation_checks: List[CitationCheck]
+
+
+class FinalReportOutput(BaseModel):
+    final_report_markdown: str = Field(
+        description="The complete revised research report in Markdown."
+    )
