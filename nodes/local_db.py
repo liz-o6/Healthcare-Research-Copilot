@@ -10,7 +10,7 @@ from rich.table import Table
 from rich.spinner import Spinner
 from rich.markdown import Markdown
 from tools.retriever_toos import build_vector_db
-from tools.retriever_toos import reteriever_tool
+from tools.retriever_toos import retriever_tool
 from tools.retriever_toos import load_retriever
 from tools.retriever_toos import load_documents
 import json
@@ -90,57 +90,112 @@ def save_index(index: dict, index_file: str = "local_documents/index.json"):
 async def node_localdb(state: SubqueryState) -> State:
     if "local_knowledge" not in state["tools"]:
         return {}
+
     query = state["subquery"]
     console.rule("[bold cyan]Local DB")
+
     docs_path = "local_documents"
     db_path = "local_db"
+
     changed_files, index = get_new_or_modified_files(docs_path)
 
     if changed_files:
         save_index(index)
+
     docs = load_documents(changed_files)
+
+    # 1. Build vector DB. Retry up to 3 times
     if docs:
-        error = build_vector_db(docs, db_path)
-        if error is not None:
+        vector_db_error = None
+
+        for attempt in range(3):
+            error = build_vector_db(docs, db_path)
+
+            if error is None:
+                vector_db_error = None
+                break
+
+            vector_db_error = error
+
+            console.print(
+                f"[yellow]build_vector_db failed "
+                f"(attempt {attempt + 1}/3): {error.message}[/yellow]"
+            )
+
+        if vector_db_error is not None:
             state_error = StateError(
                 code=StateErrorCode.VECTOR_DB_ERROR,
-                toolcode=error.code,
-                message=str(error.message),
+                toolcode=vector_db_error.code,
+                message=str(vector_db_error.message),
                 node="local_knowledge",
-                tool=error.tool,
+                tool=vector_db_error.tool,
                 subquery=query,
-                retryable=error.retryable,
+                retryable=vector_db_error.retryable,
             )
             return {
                 "errors": [state_error],
             }
 
-    result = load_retriever(db_path)
+    # 2. Load retriever. Retry up to 3 times
+    retriever = None
+    retriever_error = None
 
-    if isinstance(result, ToolError):
+    for attempt in range(3):
+        result = load_retriever(db_path)
+
+        if not isinstance(result, ToolError):
+            retriever = result
+            retriever_error = None
+            break
+
+        retriever_error = result
+
+        console.print(
+            f"[yellow]load_retriever failed "
+            f"(attempt {attempt + 1}/3): {result.message}[/yellow]"
+        )
+
+    if retriever_error is not None:
         state_error = StateError(
             code=StateErrorCode.RETRIEVER_ERROR,
-            toolcode=error.code,
-            message=str(error.message),
+            toolcode=retriever_error.code,
+            message=str(retriever_error.message),
             node="local_knowledge",
-            tool=error.tool,
+            tool=retriever_error.tool,
             subquery=query,
-            retryable=error.retryable,
+            retryable=retriever_error.retryable,
         )
         return {
             "errors": [state_error],
         }
 
-    retriever = result
+    # 3. Retrieve documents
     documents = []
     with console.status("Retrieving local_db..."):
-        documents = await reteriever_tool(retriever, [query])
+        try:
+            documents = await retriever_tool(retriever, [query])
 
-    return {
-        "results": [
-            {
-                "tool": "local_knowledge",
-                "result": {"query": query, "documents": documents},
+            # 4. Return results
+            return {
+                "results": [
+                    {
+                        "tool": "local_knowledge",
+                        "result": {
+                            "query": query,
+                            "documents": documents,
+                        },
+                    }
+                ]
             }
-        ]
-    }
+
+        except Exception as e:
+            state_error = StateError(
+                code=StateErrorCode.LOCAL_DB_LLM_ERROR,
+                message=str(e),
+                node="local_knowledge",
+                subquery=query,
+                retryable=True,
+            )
+            return {
+                "errors": [state_error],
+            }

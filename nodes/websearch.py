@@ -17,7 +17,8 @@ from rich.table import Table
 import asyncio
 
 
-async def node_websearch(state: State | SubqueryState):
+async def node_websearch(state: SubqueryState):
+    max_retries = 3
     console.rule("[bold cyan]Web Search")
 
     tool_map = {
@@ -26,80 +27,66 @@ async def node_websearch(state: State | SubqueryState):
         "research_tavily": research_tavily,
     }
 
+    error_code_map = {
+        "search_pubmed": StateErrorCode.PUBMED_ERROR,
+        "search_arxiv": StateErrorCode.ARXIV_ERROR,
+        "research_tavily": StateErrorCode.TAVILY_ERROR,
+    }
+
     hits = []
     errors = []
-
     query = state["subquery"]
 
-    # Determine which tools to run
-    retry_targets = state.get("retry_targets", [])
+    # Tools assigned to this subquery
+    tool_names = [tool for tool in state["tools"]]
 
-    web_retry_targets = [
-        target for target in retry_targets if target["node"] == "websearch"
-    ]
+    if not tool_names:
+        return {}
 
-    if web_retry_targets:
-        # Retry: only run failed web tools
-        tool_queries = [
-            (target["tool"], target["subquery"]) for target in web_retry_targets
-        ]
-
-        console.rule("[bold yellow]Retry Web Search")
-
-    else:
-        # First run: run all tools assigned to this subquery
-        tool_names = [tool for tool in state["tools"]]
-
-        if not tool_names:
-            return {}
-
-        tool_queries = [(tool_name, query) for tool_name in tool_names]
-
-        console.rule("[bold cyan]Web Search")
-
-    # Search
+    # 1. Search. Each tool retries independently up to 3 times
     with console.status(f"Searching the web for {query}..."):
-        for tool_name, tool_query in tool_queries:
+
+        for tool_name in tool_names:
 
             tool = tool_map.get(tool_name)
 
             if tool is None:
                 continue
 
-            if web_retry_targets:
+            last_error = None
+
+            for attempt in range(max_retries):
+
+                result = await tool.ainvoke(query)
+
+                if not isinstance(result, ToolError):
+                    hits.extend(result)
+                    last_error = None
+                    break
+
+                last_error = result
+
                 console.print(
-                    f"[yellow]↻ Retrying {tool_name}[/yellow]: " f"{tool_query}"
+                    f"[yellow]{tool_name} failed "
+                    f"(attempt {attempt + 1}/3): "
+                    f"{result.message}[/yellow]"
                 )
 
-            result = await tool.ainvoke(tool_query)
-
-            if isinstance(result, ToolError):
-
-                if tool_name == "search_pubmed":
-                    error_code = StateErrorCode.PUBMED_ERROR
-
-                elif tool_name == "search_arxiv":
-                    error_code = StateErrorCode.ARXIV_ERROR
-
-                elif tool_name == "research_tavily":
-                    error_code = StateErrorCode.TAVILY_ERROR
-
+            # All 3 attempts failed
+            if last_error is not None:
                 errors.append(
                     StateError(
-                        code=error_code,
-                        toolcode=result.code,
-                        message=str(result.message),
-                        node="websearch",
-                        tool=result.tool,
-                        subquery=tool_query,
-                        retryable=result.retryable,
+                        code=error_code_map[tool_name],
+                        toolcode=last_error.code,
+                        message=str(last_error.message),
+                        node="web_search",
+                        tool=last_error.tool,
+                        subquery=query,
+                        retryable=last_error.retryable,
                     )
                 )
 
-            else:
-                hits.extend(result)
-
-    # Dedupe
+    # 2. Dedupe
     hits = dedupe_hits(hits, limit=25)
 
     tbl = Table(
@@ -119,7 +106,7 @@ async def node_websearch(state: State | SubqueryState):
 
     console.print(tbl)
 
-    # Fetch
+    # 3. Fetch
     console.rule("[bold cyan]Fetch")
 
     urls = [h["url"] for h in hits if h.get("url")][:12]
@@ -148,11 +135,11 @@ async def node_websearch(state: State | SubqueryState):
 
     console.print(f"Fetched {len(pages)} pages")
 
-    # Return
+    # 4. Return
     return {
         "results": [
             {
-                "tool": "websearch",
+                "tool": "web_search",
                 "result": {
                     "query": query,
                     "hits": hits,

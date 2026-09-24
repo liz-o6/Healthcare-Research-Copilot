@@ -7,13 +7,12 @@ NodeName = Literal[
     "router",
     "local_knowledge",
     "document_qa",
-    "websearch",
+    "web_search",
 ]
 
 ToolName = Literal[
-    "build_vector_db",
     "load_retriever",
-    "reteriever_tool",
+    "build_vector_db",
     "search_arxiv",
     "search_pubmed",
     "research_tavily",
@@ -39,10 +38,11 @@ class StateErrorCode(str, Enum):
     RETRIEVER_ERROR = "ES4001"
     EMBEDDING_ERROR = "ES4002"
     DOCUMENT_LOAD_ERROR = "ES4003"
+    LOCAL_DB_LLM_ERROR = "ES4004"
 
     # Answer / Summary
-    SUMMARY_LLM_ERROR = "ES5001"
-    SUMMARY_INVALID_OUTPUT = "ES5002"
+    DOC_SUMMARY_LLM_ERROR = "ES5001"
+    DOC_SUMMARY_INVALID_OUTPUT = "ES5002"
 
 
 class ToolErrorCode(str, Enum):
@@ -75,7 +75,7 @@ class StateError(BaseModel):
     message: str
     node: NodeName
     retryable: bool = False
-    toolcode: Optional[ToolErrorCode]
+    toolcode: Optional[ToolErrorCode] = None
     tool: Optional[ToolName] = None
     subquery: Optional[str] = None
 
@@ -83,5 +83,5 @@ class StateError(BaseModel):
 class ToolError(BaseModel):
     code: ToolErrorCode
     message: str
-    tool: ToolName
+    tool: Optional[ToolName] = None
     retryable: bool = False

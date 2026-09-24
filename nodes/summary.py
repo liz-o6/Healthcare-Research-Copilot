@@ -21,7 +21,7 @@ from llm import llm
 
 async def node_summary(state: State) -> State:
     console.rule("[bold cyan]Summarize results")
-    results = state["results"]
+    results = state.get("results") or []
 
     prompt = f"""Write a concise, well-structured research report in Markdown format：
     \"\"\"{state['user_prompt']}\"\"\".

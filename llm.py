@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 
 from tools.web_search_tools import search_pubmed, search_arxiv, research_tavily
-from tools.retriever_toos import reteriever_tool
+from tools.retriever_toos import retriever_tool
 
 load_dotenv()
 

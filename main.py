@@ -57,20 +57,9 @@ def build_research_graph():
         },
     )
 
-    builder.add_edge("local_db", "aggregate")
-    builder.add_edge("web_search", "aggregate")
-    builder.add_edge("document_qa", "aggregate")
-
-    builder.add_conditional_edges(
-        "aggregate",
-        route_after_aggregate,
-        {
-            "document_qa": "document_qa",
-            "local_knowledge": "local_db",
-            "web_search": "web_search",
-            "summary": "summary",
-        },
-    )
+    builder.add_edge("local_db", "summary")
+    builder.add_edge("web_search", "summary")
+    builder.add_edge("document_qa", "summary")
 
     builder.add_edge("summary", END)
 

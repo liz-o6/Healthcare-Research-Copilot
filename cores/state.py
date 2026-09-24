@@ -6,7 +6,7 @@ import operator
 ToolNodeName = Literal[
     "local_knowledge",
     "document_qa",
-    "websearch",
+    "web_search",
 ]
 
 ToolName = Literal[
@@ -43,7 +43,7 @@ class State(TypedDict):
     # errors
     errors: Annotated[List[StateError], operator.add]
     retry_counts: Dict[str, int]
-    retry_targets: List[str]
+    retry_targets: List[ToolName]
     processed_error_count: int
 
 
