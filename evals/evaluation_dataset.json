@@ -1,0 +1,315 @@
+{
+  "dataset_name": "healthcare_research_copilot_evaluation",
+  "version": "0.1.0",
+  "description": "Initial evaluation cases for routing, retrieval, error recovery, citation verification, and final report behavior.",
+  "notes": [
+    "Cases with fault_injection require mocked tools in the future evaluation runner.",
+    "Document cases assume the listed fixture files exist in the project.",
+    "Expected topics are semantic checks, not exact-string requirements."
+  ],
+  "cases": [
+    {
+      "id": "web-pubmed-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "What does clinical evidence say about GLP-1 receptor agonists and cardiovascular outcomes in adults with type 2 diabetes?"
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["search_pubmed"],
+        "expected_topics": [
+          ["GLP-1"],
+          ["cardiovascular", "heart"],
+          ["type 2 diabetes", "T2D"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "web-arxiv-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "What recent machine-learning methods are used for medical image segmentation?"
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["search_arxiv"],
+        "expected_topics": [
+          ["medical image", "medical imaging"],
+          ["segmentation"],
+          ["machine learning", "deep learning", "neural network"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "web-tavily-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "Summarize current public-health recommendations for preventing heat-related illness during extreme heat."
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["research_tavily"],
+        "expected_topics": [
+          ["hydration", "drink water"],
+          ["heat exposure", "extreme heat"],
+          ["high-risk", "vulnerable"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "web-multi-source-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "Compare peer-reviewed evidence and public-health guidance on interventions for smoking cessation."
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["search_pubmed", "research_tavily"],
+        "expected_topics": [
+          ["medication", "pharmacotherapy"],
+          ["behavioral support", "behavioural counselling", "counseling"],
+          ["public-health guidance", "clinical guideline", "guidance"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "document-qa-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "According to the uploaded document, what are the main benefits and risks of remote work?",
+        "required_files": ["documents/benifits_of_remote_work.pdf"]
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["document_qa"],
+        "expected_topics": [
+          ["remote work", "working remotely"],
+          ["benefits", "productivity", "time savings"],
+          ["risks", "drawbacks", "communication"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "local-knowledge-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "What does the local knowledge base report about remote-work productivity?",
+        "required_files": ["local_documents/local_db_remote_work.pdf"]
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["local_knowledge"],
+        "expected_topics": [
+          ["remote work", "working remotely"],
+          ["productivity"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "document-plus-web-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "Compare the uploaded document's claims about remote work with peer-reviewed research.",
+        "required_files": ["documents/benifits_of_remote_work.pdf"]
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["document_qa", "search_pubmed"],
+        "expected_topics": [
+          ["remote work", "working remotely"],
+          ["comparison", "compare"],
+          ["evidence quality", "study quality", "peer-reviewed"]
+        ],
+        "requires_citations": true
+      }
+    },
+    {
+      "id": "insufficient-evidence-001",
+      "task_type": "end_to_end",
+      "input": {
+        "question": "Does working remotely cure clinical depression?"
+      },
+      "expected": {
+        "workflow_completed": true,
+        "required_tools": ["search_pubmed"],
+        "expected_topics": [
+          [
+            "insufficient evidence",
+            "evidence limitations",
+            "no evidence",
+            "does not establish",
+            "do not establish"
+          ],
+          ["clinical depression", "depression"]
+        ],
+        "requires_citations": true,
+        "requires_insufficient_evidence_notice": true
+      }
+    },
+    {
+      "id": "clarification-001",
+      "task_type": "clarification",
+      "input": {
+        "question": "Tell me about health."
+      },
+      "expected": {
+        "workflow_completed": true,
+        "needs_clarification": true,
+        "minimum_questions": 1
+      }
+    },
+    {
+      "id": "recovery-pubmed-timeout-001",
+      "task_type": "error_recovery",
+      "input": {
+        "question": "What treatments are effective for hypertension?"
+      },
+      "fault_injection": {
+        "tool": "search_pubmed",
+        "failure": "timeout",
+        "attempts": 3
+      },
+      "expected": {
+        "workflow_completed": true,
+        "failed_tool_recorded": true,
+        "final_report_created": true
+      }
+    },
+    {
+      "id": "recovery-tavily-network-001",
+      "task_type": "error_recovery",
+      "input": {
+        "question": "What are current recommendations for adult influenza vaccination?"
+      },
+      "fault_injection": {
+        "tool": "research_tavily",
+        "failure": "connection_error",
+        "attempts": 3
+      },
+      "expected": {
+        "workflow_completed": true,
+        "failed_tool_recorded": true,
+        "final_report_created": true
+      }
+    },
+    {
+      "id": "recovery-all-web-tools-001",
+      "task_type": "error_recovery",
+      "input": {
+        "question": "Summarize evidence about sleep duration and cardiovascular risk."
+      },
+      "fault_injection": {
+        "tools": ["search_pubmed", "search_arxiv", "research_tavily"],
+        "failure": "service_unavailable",
+        "attempts": 3
+      },
+      "expected": {
+        "workflow_completed": true,
+        "failed_tool_recorded": true,
+        "final_report_created": true,
+        "requires_insufficient_evidence_notice": true
+      }
+    },
+    {
+      "id": "citation-supported-001",
+      "task_type": "citation_verification",
+      "input": {
+        "report_markdown": "Regular physical activity can reduce cardiovascular risk [S1].",
+        "source_registry": [
+          {
+            "source_id": "S1",
+            "title": "Physical activity evidence",
+            "content": "Regular physical activity is associated with a lower risk of cardiovascular disease.",
+            "url": "https://example.org/source-1"
+          }
+        ]
+      },
+      "expected": {
+        "citation_checks": [
+          {
+            "source_id": "S1",
+            "status": "supported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "citation-unsupported-001",
+      "task_type": "citation_verification",
+      "input": {
+        "report_markdown": "The study proves that the treatment eliminates all cardiovascular risk [S1].",
+        "source_registry": [
+          {
+            "source_id": "S1",
+            "title": "Treatment study",
+            "content": "The treatment produced a modest reduction in one cardiovascular risk marker.",
+            "url": "https://example.org/source-2"
+          }
+        ]
+      },
+      "expected": {
+        "citation_checks": [
+          {
+            "source_id": "S1",
+            "status": "unsupported"
+          }
+        ]
+      }
+    },
+    {
+      "id": "citation-invalid-id-001",
+      "task_type": "citation_verification",
+      "input": {
+        "report_markdown": "The intervention improved outcomes [S99].",
+        "source_registry": []
+      },
+      "expected": {
+        "citation_checks": [
+          {
+            "source_id": "S99",
+            "status": "invalid"
+          }
+        ]
+      }
+    },
+    {
+      "id": "citation-multiple-sources-001",
+      "task_type": "citation_verification",
+      "input": {
+        "report_markdown": "Evidence suggests that remote work can improve flexibility but may increase social isolation [S1][S2].",
+        "source_registry": [
+          {
+            "source_id": "S1",
+            "title": "Remote-work flexibility",
+            "content": "Workers reported greater schedule flexibility while working remotely.",
+            "url": null
+          },
+          {
+            "source_id": "S2",
+            "title": "Remote-work isolation",
+            "content": "Some remote workers reported increased feelings of social isolation.",
+            "url": null
+          }
+        ]
+      },
+      "expected": {
+        "citation_checks": [
+          {
+            "source_id": "S1",
+            "status": "supported"
+          },
+          {
+            "source_id": "S2",
+            "status": "supported"
+          }
+        ]
+      }
+    }
+  ]
+}
