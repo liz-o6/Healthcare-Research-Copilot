@@ -1,164 +1,101 @@
 # Healthcare Research Copilot
 
-Healthcare Research Copilot is a LangGraph-based research assistant that
-combines web search, temporary document retrieval, and persistent local
-knowledge retrieval to generate structured research reports.
-
-The system analyzes the user's request, optionally asks clarification
-questions, plans which retrieval sources should be used, retrieves
-relevant information, and synthesizes the results into a final Markdown
-research report.
+A LangGraph research agent that combines web search, uploaded documents, and a
+persistent local knowledge base to produce citation-checked Markdown reports.
 
 ## Features
 
--   **Clarification** --- Determines whether more information is needed
-    before research begins.
--   **Retrieval Planning** --- Selects appropriate retrieval sources for
-    the user's request.
--   **Web Search** --- Supports PubMed, arXiv, and general web search.
--   **Document QA** --- Retrieves information from files placed in
-    `documents/`.
--   **Local Knowledge** --- Searches a persistent Chroma vector database
-    built from `local_documents/`.
--   **Multi-query Retrieval** --- Uses multiple focused queries to
-    improve retrieval recall.
--   **Incremental Local Database** --- Detects new or modified local
-    files so the persistent vector database can grow incrementally.
--   **Report Generation** --- Synthesizes retrieved evidence into a
-    structured Markdown research report.
+- Clarifies ambiguous research questions.
+- Plans subqueries and routes them to PubMed, arXiv, Tavily, Document QA, or
+  Local Knowledge.
+- Runs retrieval branches in parallel and combines their results.
+- Retries failed retrieval tools up to three times without stopping the entire
+  workflow.
+- Builds a source registry and verifies inline citations.
+- Revises unsupported citations and saves the final report as
+  `research_report.md`.
+- Includes an evaluation dataset, automated runner, and fault-injection tests.
 
 ## Workflow
 
-``` text
+```text
 User Query
     |
-    v
-Clarification
-    |
-    v
-Planner
-    |
-    v
-Router
-    |
-    +-------------------+-------------------+
-    |                   |                   |
-    v                   v                   v
-Subquery 1          Subquery 2          Subquery 3
-    |                   |                   |
-    +--------+----------+----------+--------+
-             |          |          |
-             v          v          v
-          Web Search  PubMed    Local DB
-             \          |          /
-              \         |         /
-               +--------+--------+
-                        |
-                        |
-                        v
-                 Fan-in / Summary
-                        |
-                        v
-                Research Report
+Clarification -> Planner -> Router
+                            |
+              +-------------+-------------+
+              |             |             |
+          Web Search    Document QA   Local Knowledge
+              +-------------+-------------+
+                            |
+                         Summary
+                            |
+                 Citation Verification
+                            |
+                      Final Report
 ```
+
+## Setup
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create a `.env` file:
+
+```dotenv
+OPENAI_API_KEY=your_openai_api_key
+TAVILY_API_KEY=your_tavily_api_key
+```
+
+Optional input files:
+
+- Place temporary session documents in `documents/`.
+- Place persistent knowledge documents in `local_documents/`.
+- Supported formats: PDF, DOCX, and TXT.
+
+## Run
+
+```bash
+venv/bin/python main.py
+```
+
+The completed report is saved to `research_report.md`.
+
+## Evaluation
+
+The dataset is stored in `evals/evaluation_dataset.json` and covers end-to-end
+research, clarification, citation verification, and error recovery.
+
+```bash
+# Citation verification cases (default)
+venv/bin/python evals/run_evals.py
+
+# Fault-injection and retry cases
+venv/bin/python evals/run_evals.py --type error_recovery
+
+# All cases; calls external APIs
+venv/bin/python evals/run_evals.py --type all
+
+# One case
+venv/bin/python evals/run_evals.py --case citation-invalid-id-001
+```
+
+Results are written to `evals/evaluation_results.json`.
 
 ## Project Structure
 
-``` text
-Healthcare-Research-Copilot/
-├── documents/
-│   └── ...                         # Test/session documents for Document QA
-├── local_documents/
-│   ├── ...                         # Persistent local knowledge documents
-│   └── index.json                  # File hash/index information
-├── local_db/
-│   └── ...                         # Persistent Chroma vector database
-├── nodes/
-│   ├── __init__.py
-│   ├── clarification.py            # Clarification node
-│   ├── document_qa.py              # Document QA node
-│   ├── local_db.py                 # Local knowledge node
-│   ├── planner.py                  # Retrieval planning node
-│   ├── summary.py                  # Final report generation
-│   └── websearch.py                # Web search node
-├── tools/
-│   ├── __init__.py
-│   ├── retriever_toos.py           # Document/vector retrieval utilities
-│   └── web_search_tools.py         # Web, PubMed, and arXiv tools
-├── console.py                      # Console utilities
-├── llm.py                          # LLM configuration
-├── main.py                         # Application entry point
-├── state.py                        # LangGraph state definition
-├── requirements.txt
-├── .env
-├── README.md
-└── research_report.md              # Example generated report
-```
-
-## Retrieval Sources
-
-### Web Search
-
-The planner selects web search when the request requires recent
-information, external knowledge, or academic literature. It generates
-focused queries and routes them to the appropriate search tool.
-
-### Document QA
-
-Files placed in `documents/` are loaded, split into chunks, embedded,
-and stored in a temporary Chroma vector database. The retriever searches
-this database using queries generated by the planner.
-
-Supported file types:
-
--   PDF
--   DOCX
--   TXT
-
-### Local Knowledge
-
-Files in `local_documents/` provide persistent knowledge for the
-assistant. Their vector database is stored separately in `local_db/`.
-
-The local knowledge workflow supports incremental updates so new or
-modified documents can be embedded without rebuilding the entire
-database.
-
-## Output
-
-The retrieved information is synthesized into a structured Markdown
-research report.
-
-An example generated report is included as:
-
-``` text
-research_report.md
-```
-
-The report can contain:
-
--   Executive Summary
--   Key Findings
--   Conflicting Views / Risks
--   Data & Numbers
--   Open Questions
--   Next Actions
--   Sources
-
-## Test Data
-
-Sample files are included in:
-
-``` text
-documents/
-local_documents/
-```
-
-They can be used to test the complete multi-source retrieval workflow:
-
-``` text
-Web Search + Document QA + Local Knowledge
-                    |
-                    v
-            research_report.md
+```text
+cores/                         State, schemas, and error models
+nodes/                         LangGraph workflow nodes
+tools/                         Search and retrieval tools
+documents/                     Temporary Document QA inputs
+local_documents/               Persistent knowledge inputs
+local_db/                      Persistent Chroma database
+evals/evaluation_dataset.json  Evaluation cases
+evals/run_evals.py             Evaluation runner
+main.py                        Application entry point
+research_report.md             Generated report
 ```
